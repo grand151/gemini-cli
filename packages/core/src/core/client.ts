@@ -32,13 +32,13 @@ import { retryWithBackoff } from '../utils/retry.js';
 import { getErrorMessage } from '../utils/errors.js';
 import { tokenLimit } from './tokenLimits.js';
 import {
+  AuthType,
   ContentGenerator,
   ContentGeneratorConfig,
   createContentGenerator,
 } from './contentGenerator.js';
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { DEFAULT_GEMINI_FLASH_MODEL } from '../config/models.js';
-import { AuthType } from './contentGenerator.js';
 
 function isThinkingSupported(model: string) {
   if (model.startsWith('gemini-2.5')) return true;
@@ -71,7 +71,8 @@ export class GeminiClient {
     );
     this.chat = await this.startChat();
   }
-  private getContentGenerator(): ContentGenerator {
+
+  getContentGenerator(): ContentGenerator {
     if (!this.contentGenerator) {
       throw new Error('Content generator not initialized');
     }
@@ -115,8 +116,8 @@ export class GeminiClient {
       fileService: this.config.getFileService(),
     });
     const context = `
-  Okay, just setting up the context for our chat.
-  Today is ${today}.
+  This is the Gemini CLI. We are setting up the context for our chat.
+  Today's date is ${today}.
   My operating system is: ${platform}
   I'm currently working in the directory: ${cwd}
   ${folderStructure}

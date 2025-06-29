@@ -21,10 +21,13 @@ import { ShellTool } from '../tools/shell.js';
 import { WriteFileTool } from '../tools/write-file.js';
 import { WebFetchTool } from '../tools/web-fetch.js';
 import { ReadManyFilesTool } from '../tools/read-many-files.js';
-import { MemoryTool, setGeminiMdFilename } from '../tools/memoryTool.js';
+import {
+  MemoryTool,
+  setGeminiMdFilename,
+  GEMINI_CONFIG_DIR as GEMINI_DIR,
+} from '../tools/memoryTool.js';
 import { WebSearchTool } from '../tools/web-search.js';
 import { GeminiClient } from '../core/client.js';
-import { GEMINI_CONFIG_DIR as GEMINI_DIR } from '../tools/memoryTool.js';
 import { FileDiscoveryService } from '../services/fileDiscoveryService.js';
 import { GitService } from '../services/gitService.js';
 import { getProjectTempDir } from '../utils/paths.js';
@@ -226,11 +229,6 @@ export class Config {
   }
 
   async refreshAuth(authMethod: AuthType) {
-    // Check if this is actually a switch to a different auth method
-    const previousAuthType = this.contentGeneratorConfig?.authType;
-    const _isAuthMethodSwitch =
-      previousAuthType && previousAuthType !== authMethod;
-
     // Always use the original default model when switching auth methods
     // This ensures users don't stay on Flash after switching between auth types
     // and allows API key users to get proper fallback behavior from getEffectiveModel
