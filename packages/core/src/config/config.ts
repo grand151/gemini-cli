@@ -76,6 +76,9 @@ import type { PolicyEngineConfig } from '../policy/types.js';
 import type { UserTierId } from '../code_assist/types.js';
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
 
+import { AgentRegistry } from '../agents/registry.js';
+import { SubagentToolWrapper } from '../agents/subagent-tool-wrapper.js';
+
 export enum ApprovalMode {
   DEFAULT = 'default',
   AUTO_EDIT = 'autoEdit',
@@ -113,34 +116,42 @@ export interface OutputSettings {
   format?: OutputFormat;
 }
 
+/**
+ * All information required in CLI to handle an extension. Defined in Core so
+ * that the collection of loaded, active, and inactive extensions can be passed
+ * around on the config object though Core does not use this information
+ * directly.
+ */
 export interface GeminiCLIExtension {
   name: string;
   version: string;
   isActive: boolean;
   path: string;
   installMetadata?: ExtensionInstallMetadata;
+  mcpServers?: Record<string, MCPServerConfig>;
+  contextFiles: string[];
+  excludeTools?: string[];
 }
 
 export interface ExtensionInstallMetadata {
   source: string;
   type: 'git' | 'local' | 'link' | 'github-release';
+  releaseTag?: string; // Only present for github-release installs.
   ref?: string;
   autoUpdate?: boolean;
+  allowPreRelease?: boolean;
 }
 
-export interface FileFilteringOptions {
-  respectGitIgnore: boolean;
-  respectGeminiIgnore: boolean;
-}
-// For memory files
-export const DEFAULT_MEMORY_FILE_FILTERING_OPTIONS: FileFilteringOptions = {
-  respectGitIgnore: false,
-  respectGeminiIgnore: true,
-};
-// For all other files
-export const DEFAULT_FILE_FILTERING_OPTIONS: FileFilteringOptions = {
-  respectGitIgnore: true,
-  respectGeminiIgnore: true,
+import type { FileFilteringOptions } from './constants.js';
+import {
+  DEFAULT_MEMORY_FILE_FILTERING_OPTIONS,
+  DEFAULT_FILE_FILTERING_OPTIONS,
+} from './constants.js';
+
+export type { FileFilteringOptions };
+export {
+  DEFAULT_MEMORY_FILE_FILTERING_OPTIONS,
+  DEFAULT_FILE_FILTERING_OPTIONS,
 };
 
 export const DEFAULT_TRUNCATE_TOOL_OUTPUT_THRESHOLD = 4_000_000;
@@ -171,12 +182,18 @@ export class MCPServerConfig {
     // OAuth configuration
     readonly oauth?: MCPOAuthConfig,
     readonly authProviderType?: AuthProviderType,
+    // Service Account Configuration
+    /* targetAudience format: CLIENT_ID.apps.googleusercontent.com */
+    readonly targetAudience?: string,
+    /* targetServiceAccount format: <service-account-name>@<project-num>.iam.gserviceaccount.com */
+    readonly targetServiceAccount?: string,
   ) {}
 }
 
 export enum AuthProviderType {
   DYNAMIC_DISCOVERY = 'dynamic_discovery',
   GOOGLE_CREDENTIALS = 'google_credentials',
+  SERVICE_ACCOUNT_IMPERSONATION = 'service_account_impersonation',
 }
 
 export interface SandboxConfig {
@@ -201,6 +218,7 @@ export interface ConfigParameters {
   mcpServers?: Record<string, MCPServerConfig>;
   userMemory?: string;
   geminiMdFileCount?: number;
+  geminiMdFilePaths?: string[];
   approvalMode?: ApprovalMode;
   showMemoryUsage?: boolean;
   contextFileName?: string | string[];
@@ -236,7 +254,7 @@ export interface ConfigParameters {
   interactive?: boolean;
   trustedFolder?: boolean;
   useRipgrep?: boolean;
-  shouldUseNodePtyShell?: boolean;
+  enableInteractiveShell?: boolean;
   skipNextSpeakerCheck?: boolean;
   shellExecutionConfig?: ShellExecutionConfig;
   extensionManagement?: boolean;
@@ -250,11 +268,14 @@ export interface ConfigParameters {
   policyEngineConfig?: PolicyEngineConfig;
   output?: OutputSettings;
   useModelRouter?: boolean;
+  enableMessageBusIntegration?: boolean;
+  enableSubagents?: boolean;
 }
 
 export class Config {
   private toolRegistry!: ToolRegistry;
   private promptRegistry!: PromptRegistry;
+  private agentRegistry!: AgentRegistry;
   private readonly sessionId: string;
   private fileSystemService: FileSystemService;
   private contentGeneratorConfig!: ContentGeneratorConfig;
@@ -275,6 +296,7 @@ export class Config {
   private readonly mcpServers: Record<string, MCPServerConfig> | undefined;
   private userMemory: string;
   private geminiMdFileCount: number;
+  private geminiMdFilePaths: string[];
   private approvalMode: ApprovalMode;
   private readonly showMemoryUsage: boolean;
   private readonly accessibility: AccessibilitySettings;
@@ -321,7 +343,7 @@ export class Config {
   private readonly interactive: boolean;
   private readonly trustedFolder: boolean | undefined;
   private readonly useRipgrep: boolean;
-  private readonly shouldUseNodePtyShell: boolean;
+  private readonly enableInteractiveShell: boolean;
   private readonly skipNextSpeakerCheck: boolean;
   private shellExecutionConfig: ShellExecutionConfig;
   private readonly extensionManagement: boolean = true;
@@ -339,6 +361,8 @@ export class Config {
   private readonly policyEngine: PolicyEngine;
   private readonly outputSettings: OutputSettings;
   private readonly useModelRouter: boolean;
+  private readonly enableMessageBusIntegration: boolean;
+  private readonly enableSubagents: boolean;
 
   constructor(params: ConfigParameters) {
     this.sessionId = params.sessionId;
@@ -363,6 +387,7 @@ export class Config {
     this.mcpServers = params.mcpServers;
     this.userMemory = params.userMemory ?? '';
     this.geminiMdFileCount = params.geminiMdFileCount ?? 0;
+    this.geminiMdFilePaths = params.geminiMdFilePaths ?? [];
     this.approvalMode = params.approvalMode ?? ApprovalMode.DEFAULT;
     this.showMemoryUsage = params.showMemoryUsage ?? false;
     this.accessibility = params.accessibility ?? {};
@@ -408,7 +433,7 @@ export class Config {
     this.interactive = params.interactive ?? false;
     this.trustedFolder = params.trustedFolder;
     this.useRipgrep = params.useRipgrep ?? true;
-    this.shouldUseNodePtyShell = params.shouldUseNodePtyShell ?? false;
+    this.enableInteractiveShell = params.enableInteractiveShell ?? false;
     this.skipNextSpeakerCheck = params.skipNextSpeakerCheck ?? true;
     this.shellExecutionConfig = {
       terminalWidth: params.shellExecutionConfig?.terminalWidth ?? 80,
@@ -421,11 +446,13 @@ export class Config {
       DEFAULT_TRUNCATE_TOOL_OUTPUT_THRESHOLD;
     this.truncateToolOutputLines =
       params.truncateToolOutputLines ?? DEFAULT_TRUNCATE_TOOL_OUTPUT_LINES;
-    this.enableToolOutputTruncation =
-      params.enableToolOutputTruncation ?? false;
+    this.enableToolOutputTruncation = params.enableToolOutputTruncation ?? true;
     this.useSmartEdit = params.useSmartEdit ?? true;
     this.useWriteTodos = params.useWriteTodos ?? false;
     this.useModelRouter = params.useModelRouter ?? false;
+    this.enableMessageBusIntegration =
+      params.enableMessageBusIntegration ?? false;
+    this.enableSubagents = params.enableSubagents ?? false;
     this.extensionManagement = params.extensionManagement ?? true;
     this.storage = new Storage(this.targetDir);
     this.enablePromptCompletion = params.enablePromptCompletion ?? false;
@@ -467,6 +494,10 @@ export class Config {
       await this.getGitService();
     }
     this.promptRegistry = new PromptRegistry();
+
+    this.agentRegistry = new AgentRegistry(this);
+    await this.agentRegistry.initialize();
+
     this.toolRegistry = await this.createToolRegistry();
 
     await this.geminiClient.initialize();
@@ -613,6 +644,10 @@ export class Config {
     return this.workspaceContext;
   }
 
+  getAgentRegistry(): AgentRegistry {
+    return this.agentRegistry;
+  }
+
   getToolRegistry(): ToolRegistry {
     return this.toolRegistry;
   }
@@ -674,6 +709,14 @@ export class Config {
 
   setGeminiMdFileCount(count: number): void {
     this.geminiMdFileCount = count;
+  }
+
+  getGeminiMdFilePaths(): string[] {
+    return this.geminiMdFilePaths;
+  }
+
+  setGeminiMdFilePaths(paths: string[]): void {
+    this.geminiMdFilePaths = paths;
   }
 
   getApprovalMode(): ApprovalMode {
@@ -900,8 +943,8 @@ export class Config {
     return this.useRipgrep;
   }
 
-  getShouldUseNodePtyShell(): boolean {
-    return this.shouldUseNodePtyShell;
+  getEnableInteractiveShell(): boolean {
+    return this.enableInteractiveShell;
   }
 
   getSkipNextSpeakerCheck(): boolean {
@@ -985,6 +1028,14 @@ export class Config {
     return this.policyEngine;
   }
 
+  getEnableMessageBusIntegration(): boolean {
+    return this.enableMessageBusIntegration;
+  }
+
+  getEnableSubagents(): boolean {
+    return this.enableSubagents;
+  }
+
   async createToolRegistry(): Promise<ToolRegistry> {
     const registry = new ToolRegistry(this, this.eventEmitter);
 
@@ -1018,7 +1069,24 @@ export class Config {
       }
 
       if (isEnabled) {
-        registry.registerTool(new ToolClass(...args));
+        // Pass message bus to tools when feature flag is enabled
+        // This first implementation is only focused on the general case of
+        // the tool registry.
+        const messageBusEnabled = this.getEnableMessageBusIntegration();
+        if (this.debugMode && messageBusEnabled) {
+          console.log(
+            `[DEBUG] enableMessageBusIntegration setting: ${messageBusEnabled}`,
+          );
+        }
+        const toolArgs = messageBusEnabled
+          ? [...args, this.getMessageBus()]
+          : args;
+        if (this.debugMode && messageBusEnabled) {
+          console.log(
+            `[DEBUG] Registering ${className} with messageBus: ${messageBusEnabled ? 'YES' : 'NO'}`,
+          );
+        }
+        registry.registerTool(new ToolClass(...toolArgs));
       }
     };
 
@@ -1057,6 +1125,41 @@ export class Config {
     registerCoreTool(WebSearchTool, this);
     if (this.getUseWriteTodos()) {
       registerCoreTool(WriteTodosTool, this);
+    }
+
+    // Register Subagents as Tools
+    if (this.getEnableSubagents()) {
+      const agentDefinitions = this.agentRegistry.getAllDefinitions();
+      for (const definition of agentDefinitions) {
+        // We must respect the main allowed/exclude lists for agents too.
+        const excludeTools = this.getExcludeTools() || [];
+        const allowedTools = this.getAllowedTools();
+
+        const isExcluded = excludeTools.includes(definition.name);
+        const isAllowed =
+          !allowedTools || allowedTools.includes(definition.name);
+
+        if (isAllowed && !isExcluded) {
+          try {
+            const messageBusEnabled = this.getEnableMessageBusIntegration();
+            const wrapper = new SubagentToolWrapper(
+              definition,
+              this,
+              messageBusEnabled ? this.getMessageBus() : undefined,
+            );
+            registry.registerTool(wrapper);
+          } catch (error) {
+            console.error(
+              `Failed to wrap agent '${definition.name}' as a tool:`,
+              error,
+            );
+          }
+        } else if (this.getDebugMode()) {
+          console.log(
+            `[Config] Skipping registration of agent '${definition.name}' due to allow/exclude configuration.`,
+          );
+        }
+      }
     }
 
     await registry.discoverAllTools();
