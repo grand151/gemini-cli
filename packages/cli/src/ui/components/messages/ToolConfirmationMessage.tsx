@@ -41,7 +41,6 @@ export const ToolConfirmationMessage: React.FC<
   terminalWidth,
 }) => {
   const { onConfirm } = confirmationDetails;
-  const childWidth = terminalWidth - 2; // 2 for padding
 
   const isAlternateBuffer = useAlternateBuffer();
 
@@ -58,6 +57,7 @@ export const ToolConfirmationMessage: React.FC<
           setIsDiffingEnabled(client?.isDiffingEnabled() ?? false);
         }
       };
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
       getIdeClient();
     }
     return () => {
@@ -76,6 +76,7 @@ export const ToolConfirmationMessage: React.FC<
         );
       }
     }
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     onConfirm(outcome);
   };
 
@@ -85,6 +86,7 @@ export const ToolConfirmationMessage: React.FC<
     (key) => {
       if (!isFocused) return;
       if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         handleConfirm(ToolConfirmationOutcome.Cancel);
       }
     },
@@ -249,21 +251,15 @@ export const ToolConfirmationMessage: React.FC<
         </Box>
       );
 
-      bodyContent = (
-        <Box flexDirection="column">
-          <Box paddingX={1}>
-            {isAlternateBuffer ? (
-              commandBox
-            ) : (
-              <MaxSizedBox
-                maxHeight={bodyContentHeight}
-                maxWidth={Math.max(childWidth, 1)}
-              >
-                {commandBox}
-              </MaxSizedBox>
-            )}
-          </Box>
-        </Box>
+      bodyContent = isAlternateBuffer ? (
+        commandBox
+      ) : (
+        <MaxSizedBox
+          maxHeight={bodyContentHeight}
+          maxWidth={Math.max(terminalWidth, 1)}
+        >
+          {commandBox}
+        </MaxSizedBox>
       );
     } else if (confirmationDetails.type === 'info') {
       const infoProps = confirmationDetails;
@@ -274,7 +270,7 @@ export const ToolConfirmationMessage: React.FC<
         );
 
       bodyContent = (
-        <Box flexDirection="column" paddingX={1}>
+        <Box flexDirection="column">
           <Text color={theme.text.link}>
             <RenderInline
               text={infoProps.prompt}
@@ -299,7 +295,7 @@ export const ToolConfirmationMessage: React.FC<
       const mcpProps = confirmationDetails as ToolMcpConfirmationDetails;
 
       bodyContent = (
-        <Box flexDirection="column" paddingX={1}>
+        <Box flexDirection="column">
           <Text color={theme.text.link}>MCP Server: {mcpProps.serverName}</Text>
           <Text color={theme.text.link}>Tool: {mcpProps.toolName}</Text>
         </Box>
@@ -315,7 +311,6 @@ export const ToolConfirmationMessage: React.FC<
     availableTerminalHeight,
     terminalWidth,
     isAlternateBuffer,
-    childWidth,
   ]);
 
   if (confirmationDetails.type === 'edit') {
@@ -326,7 +321,8 @@ export const ToolConfirmationMessage: React.FC<
           borderStyle="round"
           borderColor={theme.border.default}
           justifyContent="space-around"
-          padding={1}
+          paddingTop={1}
+          paddingBottom={1}
           overflow="hidden"
         >
           <Text color={theme.text.primary}>Modify in progress: </Text>
@@ -342,23 +338,17 @@ export const ToolConfirmationMessage: React.FC<
     <Box flexDirection="column" paddingTop={0} paddingBottom={1}>
       {/* Body Content (Diff Renderer or Command Info) */}
       {/* No separate context display here anymore for edits */}
-      <Box
-        flexGrow={1}
-        flexShrink={1}
-        overflow="hidden"
-        marginBottom={1}
-        paddingLeft={1}
-      >
+      <Box flexGrow={1} flexShrink={1} overflow="hidden" marginBottom={1}>
         {bodyContent}
       </Box>
 
       {/* Confirmation Question */}
-      <Box marginBottom={1} flexShrink={0} paddingX={1}>
+      <Box marginBottom={1} flexShrink={0}>
         <Text color={theme.text.primary}>{question}</Text>
       </Box>
 
       {/* Select Input for Options */}
-      <Box flexShrink={0} paddingX={1}>
+      <Box flexShrink={0}>
         <RadioButtonSelect
           items={options}
           onSelect={handleSelect}

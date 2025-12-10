@@ -1,4 +1,4 @@
-# Gemini CLI Keyboard Shortcuts
+# Gemini CLI keyboard shortcuts
 
 Gemini CLI ships with a set of default keyboard shortcuts for editing input,
 navigating history, and controlling the UI. Use this reference to learn the
@@ -34,6 +34,17 @@ available combinations.
 | Action                                       | Keys       |
 | -------------------------------------------- | ---------- |
 | Clear the terminal screen and redraw the UI. | `Ctrl + L` |
+
+#### Scrolling
+
+| Action                   | Keys                 |
+| ------------------------ | -------------------- |
+| Scroll content up.       | `Shift + Up Arrow`   |
+| Scroll content down.     | `Shift + Down Arrow` |
+| Scroll to the top.       | `Home`               |
+| Scroll to the bottom.    | `End`                |
+| Scroll up by one page.   | `Page Up`            |
+| Scroll down by one page. | `Page Down`          |
 
 #### History & Search
 
@@ -76,7 +87,7 @@ available combinations.
 | Action                                         | Keys       |
 | ---------------------------------------------- | ---------- |
 | Open the current prompt in an external editor. | `Ctrl + X` |
-| Paste an image from the clipboard.             | `Ctrl + V` |
+| Paste from the clipboard.                      | `Ctrl + V` |
 
 #### App Controls
 
@@ -99,7 +110,7 @@ available combinations.
 
 <!-- KEYBINDINGS-AUTOGEN:END -->
 
-## Additional Context-Specific Shortcuts
+## Additional context-specific shortcuts
 
 - `Ctrl+Y`: Toggle YOLO (auto-approval) mode for tool calls.
 - `Shift+Tab`: Toggle Auto Edit (auto-accept edits) mode.
